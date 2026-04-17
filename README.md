@@ -2,6 +2,8 @@
 
 This repository contains a Jupyter Notebook for fine-tuning the **Gemma4-e4b** base model specifically for **Turkish Retrieval Augmented Generation (RAG)** tasks. The project utilizes **Unsloth** for efficient, memory-optimized training.
 
+HF link = https://huggingface.co/uabali/gemma4-e4b-TR
+
 ## Overview
 
 The primary goal of this project is to improve the model's ability to answer questions based on a provided Turkish context. By fine-tuning on a specialized dataset, the model learns to stay faithful to the given information and ignore irrelevant background noise.
