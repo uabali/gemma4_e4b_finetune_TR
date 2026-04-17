@@ -51,7 +51,7 @@ model, tokenizer = FastLanguageModel.from_pretrained(
     max_seq_length = 2048,
     load_in_4bit = True,
 )
-FastModel.for_inference(model)
+# FastModel.for_inference(model)
 
 messages = [
     {"role": "user", "content": "Soru:\n[SORUNUZ]\n\nBağlam:\n[BAĞLAM METNİ]"}
