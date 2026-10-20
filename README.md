@@ -1,81 +1,80 @@
-# Turkish Gemma-4 RAG Finetune
+# Turkish Gemma-4 RAG Fine-tune
 
-This repository contains a Jupyter Notebook for fine-tuning the **Gemma4-e4b** base model specifically for **Turkish Retrieval Augmented Generation (RAG)** tasks. The project utilizes **Unsloth** for efficient, memory-optimized training.
+Fine-tuning **Gemma-4-E4B** for Turkish retrieval-augmented generation: given a Turkish question and a context passage, answer from the context. Trained with Unsloth + LoRA on 3,000 Turkish RAG examples, and published on Hugging Face as LoRA, merged 16-bit and GGUF versions.
 
-HF link = https://huggingface.co/uabali/gemma4-e4b-TR
+- Model: https://huggingface.co/uabali/gemma4-e4b-TR
+- Notebook: [`gemma4_e4b_finetune_TR.ipynb`](gemma4_e4b_finetune_TR.ipynb)
 
 ## Overview
 
-The primary goal of this project is to improve the model's ability to answer questions based on a provided Turkish context. By fine-tuning on a specialized dataset, the model learns to stay faithful to the given information and ignore irrelevant background noise.
+The goal is a small model that stays faithful to the provided Turkish context. Each training example is a single chat turn:
 
-### Key Technical Specs
-
-* **Base Model:** Gemma-4
-* **Optimization:** Unsloth
-* **Method:** LoRA / QLoRA (Ranked Adaptation)
-* **Language:** Turkish (TR)
-* **Task Type:** RAG (Question + Context -> Answer)
-
-## Dataset
-
-The model is trained on **3,000 Turkish examples**. Each example follows a specific chat template:
-
-- **User Instruction:** Contains a "Question" and a "Context".
-- **Model Response:** The answer derived strictly from the provided context.
-
-Training focuses exclusively on the model's responses to ensure efficient learning (`train_on_responses_only` is enabled).
-
-## Performance Highlights
-
-* **Training Duration:** ~42 minutes for 2 epochs on an A100 GPU.
-* **Trainable Parameters:** ~18.35 Million (0.23% of total parameters).
-* **Memory Efficiency:** Smart gradient offloading to minimize VRAM usage.
-
-## Getting Started
-
-### Prerequisites
-
-```bash
-pip install unsloth
-pip install --no-deps xformers trl peft accelerate bitsandbytes
+```text
+user:  Soru:\n<question>\n\nBağlam:\n<context>
+model: <answer grounded in the context>
 ```
 
-### Inference Example
+## Pipeline
 
-You can use the following snippet to test the fine-tuned model (adapters):
+```mermaid
+flowchart LR
+    D["Metin/WikiRAG-TR<br/>first 3,000 rows"] --> F["Format to Gemma-4<br/>chat template"]
+    F --> T["SFTTrainer + LoRA<br/>4-bit base, responses-only loss"]
+    B["unsloth/gemma-4-E4B-it"] --> T
+    T --> L["LoRA adapters"]
+    L --> M["Merged 16-bit<br/>(vLLM)"]
+    L --> G["GGUF q8_0<br/>(llama.cpp / Ollama)"]
+    M --> H[(Hugging Face)]
+    G --> H
+    L --> H
+```
+
+## Training setup (from the notebook)
+
+| Setting | Value |
+|---|---|
+| Base | `unsloth/gemma-4-E4B-it`, loaded in 4-bit |
+| Adapted layers | language: attention + MLP (vision layers frozen) |
+| LoRA | r = 8, alpha = 8, dropout = 0 |
+| Max sequence length | 4096 |
+| Batch | 4 per device × 4 gradient accumulation |
+| Optimizer / schedule | adamw_8bit, lr 2e-5, cosine, 50 warmup steps, 2 epochs |
+| Loss | `train_on_responses_only`: prompt tokens are masked |
+
+## Results
+
+- **0.23%** of parameters trained (LoRA)
+- About **42 minutes** of training on one **A100**
+- Published as **LoRA, 16-bit and GGUF** versions on Hugging Face
+
+Evaluation coming soon: base vs fine-tuned on a held-out Turkish RAG split (faithfulness / exact match). The current run uses no eval set.
+
+## Quickstart (inference)
 
 ```python
-from unsloth import FastLanguageModel
-from unsloth.chat_templates import get_chat_template
+from unsloth import FastModel
 
-model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name = "uabali/gemma4-e4b-rag-TR",
-    max_seq_length = 2048,
-    load_in_4bit = True,
+model, tokenizer = FastModel.from_pretrained(
+    model_name="uabali/gemma4-e4b-TR",
+    max_seq_length=4096,
+    load_in_4bit=True,
 )
-# FastModel.for_inference(model)
+FastModel.for_inference(model)
 
-messages = [
-    {"role": "user", "content": "Soru:\n[SORUNUZ]\n\nBağlam:\n[BAĞLAM METNİ]"}
-]
-inputs = tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True, return_tensors="pt").to("cuda")
-
-outputs = model.generate(**inputs, max_new_tokens=256)
-print(tokenizer.decode(outputs[0]))
+messages = [{"role": "user", "content": [{"type": "text",
+    "text": "Soru:\n<SORU>\n\nBağlam:\n<BAĞLAM>"}]}]
+inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True,
+    tokenize=True, return_dict=True, return_tensors="pt").to("cuda")
+print(tokenizer.decode(model.generate(**inputs, max_new_tokens=256)[0]))
 ```
 
-## Export Options
+GGUF builds run with llama.cpp or Ollama.
 
-The notebook provides scripts to export the model in several formats:
+## Next steps
 
-1. **LoRA Adapters:** Small files containing only the fine-tuned weights.
-2. **Merged 16-bit:** The full model with adapters merged (for vLLM/deployment).
-3. **GGUF:** Quantized formats for local execution via **Ollama** or **Llama.cpp**.
+- Hold out an evaluation split and report base vs fine-tuned scores.
+- Add negative examples (context does not contain the answer) to train refusals.
 
 ## License
 
-This project is licensed under the **Apache License 2.0**. See the `LICENSE` file for details.
-
----
-
-*Created by [uabali](https://huggingface.co/uabali)*
+Apache 2.0. See [LICENSE](LICENSE).
